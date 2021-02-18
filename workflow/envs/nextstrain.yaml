@@ -13,11 +13,12 @@ dependencies:
 - python=3.6*
 - nodejs=10
 - raxml
+- samtools
 - vcftools
 - git
 - pip
 - pip:
   - awscli==1.18.45
-  - git+https://github.com/nextstrain/augur@add-index-command
+  - git+https://github.com/nextstrain/augur@metadata-only-filter
   - nextstrain-cli==1.16.5
   - rethinkdb==2.3.0.post6

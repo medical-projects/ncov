@@ -305,6 +305,25 @@ rule filter:
             --output {output.sequences} 2>&1 | tee {log}
         """
 
+rule fasta_index_filtered_sequences:
+    message:
+        """
+        samtools faidx filtered sequences.
+        """
+    input:
+        sequences = "results/filtered.fasta"
+    output:
+        sequence_index = "results/filtered.fasta.fai"
+    log:
+        "logs/samtools_faidx_sequences.txt"
+    benchmark:
+        "benchmarks/samtools_faidx_sequences.txt"
+    conda: config["conda_environment"]
+    shell:
+        """
+        samtools faidx {input.sequences}
+        """
+
 def _get_subsampling_settings(wildcards):
     # Allow users to override default subsampling with their own settings keyed
     # by location type and name. For example, "region_europe" or
@@ -401,14 +420,13 @@ rule subsample:
          - priority: {params.priority_argument}
         """
     input:
-        sequences = "results/filtered.fasta",
         sequence_index = "results/sequence_index.tsv",
         metadata = config["metadata"],
         include = config["files"]["include"],
         priorities = get_priorities,
         exclude = config["files"]["exclude"]
     output:
-        sequences = "results/{build_name}/sample-{subsample}.fasta"
+        strains = "results/{build_name}/sample-{subsample}.txt"
     log:
         "logs/subsample_{build_name}_{subsample}.txt"
     benchmark:
@@ -429,7 +447,6 @@ rule subsample:
     shell:
         """
         augur filter \
-            --sequences {input.sequences} \
             --sequence-index {input.sequence_index} \
             --metadata {input.metadata} \
             --include {input.include} \
@@ -445,7 +462,7 @@ rule subsample:
             {params.sequences_per_group} \
             {params.subsample_max_sequences} \
             {params.sampling_scheme} \
-            --output {output.sequences} 2>&1 | tee {log}
+            --output-strains {output.strains} 2>&1 | tee {log}
         """
 
 rule proximity_score:
@@ -481,17 +498,32 @@ def _get_subsampled_files(wildcards):
     subsampling_settings = _get_subsampling_settings(wildcards)
 
     return [
-        f"results/{wildcards.build_name}/sample-{subsample}.fasta"
+        f"results/{wildcards.build_name}/sample-{subsample}.txt"
         for subsample in subsampling_settings
     ]
+
+rule combine_sample_names:
+    input:
+        include=_get_subsampled_files
+    output:
+        strains = "results/{build_name}/subsampled_strains.txt"
+    log:
+        "logs/subsampled_strains_{build_name}.txt"
+    conda: config["conda_environment"]
+    shell:
+        """
+        sort -u {input.include} > {output}
+        """
 
 rule combine_samples:
     message:
         """
-        Combine and deduplicate FASTAs
+        Extract subsampled strains to a FASTA file.
         """
     input:
-        _get_subsampled_files
+        sequences = "results/filtered.fasta",
+        samtools_index = "results/filtered.fasta.fai",
+        strains = "results/{build_name}/subsampled_strains.txt"
     output:
         alignment = "results/{build_name}/subsampled_alignment.fasta"
     log:
@@ -499,9 +531,7 @@ rule combine_samples:
     conda: config["conda_environment"]
     shell:
         """
-        python3 scripts/combine-and-dedup-fastas.py \
-            --input {input} \
-            --output {output} 2>&1 | tee {log}
+        samtools faidx -c -r {input.strains} -o {output.alignment} {input.sequences} 2>&1 | tee {log}
         """
 
 # TODO: This will probably not work for build names like "country_usa" where we need to know the country is "USA".
